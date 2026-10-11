@@ -20,7 +20,7 @@ Na Task 1 usamos os comandos printenv, export e unset para observar, definir e a
 
 Na Task 2 observamos a diferença entre as variáveis de ambiente de um processo pai e um processo filho através da utilização do fork(). Ao comparar o output de printenv() dos dois, guardado em dois ficheiros e comparado com diff, percebemos que são herdadas todas as variáveis de ambiente de pai pra filho. Não havendo diferenças entre os ficheiros, como mostra a imagem, o filho recebe uma cópia das variáveis naquele momento, quaisquer alterações futuras não serão partilhadas.
 
-![Task 1-2](/task1.png)
+![Task 1-2](/task1-2.png)
 
 #### Task 3-4
 
