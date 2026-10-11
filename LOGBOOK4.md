@@ -20,15 +20,17 @@ Na Task 1 usamos os comandos printenv, export e unset para observar, definir e a
 
 Na Task 2 observamos a diferença entre as variáveis de ambiente de um processo pai e um processo filho através da utilização do fork(). Ao comparar o output de printenv() dos dois, guardado em dois ficheiros e comparado com diff, percebemos que são herdadas todas as variáveis de ambiente de pai pra filho. Não havendo diferenças entre os ficheiros, como mostra a imagem, o filho recebe uma cópia das variáveis naquele momento, quaisquer alterações futuras não serão partilhadas.
 
-![Task 1-2](/printenvDiff.png)
+![Task 1-2](/task1.png)
 
 #### Task 3-4
 
 Na Task 3 observamos a diferença entre executar um programa através de execve() com o argumento de variáveis de ambiente a NULL e com environ. Ao passar NULL, o programa é executado com o ambiente vazio; ao passar environ, recebe as variáveis de ambiente do processo que o chamou. O execve() não cria um novo processo, só substitui o programa executado no processo atual.
 
+![Task 3](/task3.png)
+
 Na Task 4 usamos system(), que executa o comando através de uma shell. As variáveis de ambiente do processo chamador são passadas à shell automaticamente, sem ser preciso indicá-las como argumento de system().
 
-![This is an alt text.](/image/Markdown-mark.svg "This is a sample image.")
+![Task 4.](/task4.png)
 
 #### Task 5
 
@@ -36,7 +38,7 @@ Nesta task observa-se as variáveis de ambiente herdadas por um programa SET-UID
 
 O programa SET-UID impede a alteração da variável *LD_LIBRARY_PATH* para não influenciar as bibliotecas carregadas pelo programa com privilégios root.
 
-![This is an alt text.](/image/Markdown-mark.svg "This is a sample image.")
+![Task 5](/task5.png)
 
 #### Task 6
 
@@ -48,7 +50,7 @@ Na configuração do lab, /bin/sh aponta para /bin/dash, que apresenta uma contr
 
 No fim do exercício é necessário repor a ligação original com `sudo ln -sf /bin/dash /bin/sh`.
 
-![This is an alt text.](/image/Markdown-mark.svg "This is a sample image.")
+![Task 6](/task6.png)
 
 ## Questão 2
 
@@ -58,8 +60,11 @@ Nesta task o utilizador seed consegue apagar um ficheiro que não lhe é permiti
 
 O programa junta o argumento dado pelo utilizador ao comando /bin/cat e passa essa string a system(). Ao incluir um separador como `;` seguido de outro comando dentro do argumento, a shell executa também esse comando. O argumento deve ser passado entre aspas para que o separador seja interpretado pela shell chamada por catall, e não pela shell inicial do utilizador
 
+![Task 8.1](/questao2-1.png)
 
-![](/image/Markdown-mark.svg "This is a sample image.")
+Após a alteração de uso de system() para execve(), já não é possível realizar a injeção de comandos
+
+![Task 8.2](/questao2-2.png)
 
 ## Questão 3
 
@@ -116,7 +121,7 @@ cat /etc/zzz
 ```
 
 
-![This is an alt text.](/image/Markdown-mark.svg "This is a sample image.")
+![Task 3](/questao3.png)
 
 **Explicação técnica**
 
