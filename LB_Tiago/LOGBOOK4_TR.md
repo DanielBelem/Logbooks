@@ -283,16 +283,3 @@ A vulnerabilidade existe porque (a) o `open()` acontece antes da queda de privil
 O `cat /etc/zzz` corrido fora do programa, já sem nenhum processo privilegiado em curso, mostra que o conteúdo escrito pelo `seed` (como confirma o `whoami` dentro da shell gerada pelo próprio exploit) ficou mesmo gravado no ficheiro que pertence a root. Isto comprova, de forma independente da sessão onde corremos o ataque, que um utilizador sem permissão de escrita em `/etc/zzz` conseguiu escrever lá através do `cap_leak`.
 
 Baixar o UID de um processo com `setuid()` não chega, por si só, para garantir que o processo deixou de ser privilegiado. Recursos obtidos antes da queda de privilégio, neste caso um file descriptor aberto para escrita, continuam acessíveis depois dela e tornam-se um vetor de escalada de privilégios indireta. Um programa Set-UID bem feito tem de tratar explicitamente o ciclo de vida de todos os recursos privilegiados que adquire, e não só do seu próprio UID.
-
----
-
-## Nota complementar: Task 7 (não pedida diretamente pelas questões do relatório)
-
-Fizemos também a Task 7, sobre o comportamento da variável `LD_PRELOAD`:
-
-- Programa normal, utilizador normal: a `LD_PRELOAD` funciona e a função `sleep()` definida em `libmylib.so.1.0.1` substitui a da libc, imprimindo `"I am not sleeping!"`.
-- Programa Set-UID root, utilizador normal: a `LD_PRELOAD` é ignorada pelo dynamic linker e o programa dorme normalmente.
-- Programa Set-UID root, corrido pelo próprio root: a `LD_PRELOAD` volta a funcionar, porque o real UID é igual ao effective UID (e ao dono), não havendo escalada de privilégio.
-- Programa Set-UID de outro utilizador, corrido pelo `seed`: a `LD_PRELOAD` é outra vez ignorada.
-
-O dynamic linker só respeita a `LD_PRELOAD` (e outras variáveis `LD_*`) quando o UID real coincide com o UID efetivo do processo. Sempre que estes dois UIDs diferem, sinal de que o processo está a correr com privilégios herdados de outro utilizador, essas variáveis são ignoradas, precisamente para impedir a injeção de bibliotecas maliciosas em programas privilegiados.
