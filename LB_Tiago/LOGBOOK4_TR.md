@@ -19,7 +19,11 @@
 
 ### Task 1: Manipulação de variáveis de ambiente
 
-Usámos o `printenv` e o `env` para listar as variáveis de ambiente e os comandos internos da Bash `export` e `unset` para as definir e remover.
+As variáveis de ambiente são um conjunto de pares nome/valor que o sistema mantém associado a cada processo e que influenciam a forma como esse processo e os programas que ele lança se comportam (por exemplo, o `PATH` indica onde procurar executáveis e o `HOME` aponta para a diretoria pessoal do utilizador).
+
+Usámos o `printenv` e o `env` para listar essas variáveis.
+
+Para as criar e remover usámos o `export` e o `unset`. Ao contrário do `printenv`/`env`, estes dois não são programas autónomos: são comandos internos da própria Bash, pelo que não existe nenhum executável com esse nome fora da shell. Isto faz sentido porque uma variável definida por um programa externo só afetaria o processo desse programa e desapareceria quando ele terminasse; sendo internos, o `export` e o `unset` alteram diretamente o ambiente da shell que estamos a usar, e essa alteração passa depois aos processos-filho que a shell criar.
 
 <p align="center">
   <img src="../q1_printenv.png" width="49%" style="vertical-align: middle;" />
@@ -28,22 +32,26 @@ Usámos o `printenv` e o `env` para listar as variáveis de ambiente e os comand
 
 ### Task 2: Propagação de variáveis entre processos (fork)
 
-Compilámos e corremos o `myprintenv.c`, que usa `fork()` para criar um processo filho. Numa primeira execução chamámos o `printenv()` só no filho e, numa segunda, só no pai. Guardámos os dois outputs em ficheiros e comparámo-los com `diff`.
+O `fork()` cria um novo processo duplicando o processo que o chama: o filho começa como uma cópia praticamente exata do pai (há exceções descritas em `man fork`, como o PID). O que queremos perceber nesta task é se as variáveis de ambiente fazem parte daquilo que o filho herda.
+
+Compilámos e corremos o `myprintenv.c`, que usa `fork()` para criar um processo filho. Numa primeira execução chamámos o `printenv()` só no filho e, numa segunda, só no pai (comentando e descomentando a chamada em cada ramo do `switch`). Guardámos os dois outputs em ficheiros separados e comparámo-los com o `diff`.
 
 ![Task 1-2](../task1-2.png)
 
-O `diff` não acusou diferenças entre os dois ficheiros. O processo filho herda uma cópia completa das variáveis de ambiente do pai no momento do `fork()`, e a partir daí cada processo tem o seu próprio espaço de memória, por isso alterações feitas num deles não passam para o outro.
+O `diff` não acusou nenhuma diferença entre os dois ficheiros, ou seja, o pai e o filho imprimiram exatamente o mesmo ambiente. Concluímos que o processo filho herda uma cópia completa das variáveis de ambiente do pai no momento do `fork()`. A partir desse instante cada processo passa a ter o seu próprio espaço de memória, por isso é uma cópia e não uma partilha: qualquer alteração feita depois num dos processos não se reflete no outro.
 
 ### Task 3: `execve()` e variáveis de ambiente
 
-Compilámos e corremos o `myenv.c`, que chama `execve("/usr/bin/env", argv, envp)` com dois valores diferentes no terceiro argumento:
+Ao contrário do `fork()`, o `execve()` não cria um processo novo: substitui o programa que está a correr no processo atual pelo programa indicado, sobrepondo-lhe o código, os dados e a pilha. A chamada, quando tem sucesso, nunca retorna, porque o programa original deixa de existir. Aqui interessa-nos saber o que acontece às variáveis de ambiente nessa substituição.
+
+Compilámos e corremos o `myenv.c`, que chama `execve("/usr/bin/env", argv, envp)` com dois valores diferentes no terceiro argumento (o `/usr/bin/env` limita-se a imprimir as variáveis de ambiente que recebe):
 
 - Com `NULL`, o `/usr/bin/env` não imprimiu nada, porque não recebeu nenhuma variável de ambiente.
 - Com `environ`, o `/usr/bin/env` imprimiu todas as variáveis de ambiente do processo que o chamou.
 
 ![Task 3](../task3.png)
 
-Ao contrário do `fork()`, o `execve()` não herda automaticamente as variáveis de ambiente do processo que o invoca. Elas só são passadas se as indicarmos explicitamente no terceiro parâmetro (`envp`).
+Ao contrário do `fork()`, o `execve()` não herda automaticamente as variáveis de ambiente do processo que o invoca. Elas só são passadas se as indicarmos explicitamente no terceiro parâmetro (`envp`): se passarmos `NULL`, o novo programa arranca com o ambiente vazio; se passarmos `environ`, entregamos-lhe o ambiente atual do processo.
 
 ### Task 4: `system()` e variáveis de ambiente
 
@@ -51,15 +59,19 @@ Corremos um programa que invoca `system("/usr/bin/env")`.
 
 ![Task 4](../task4.png)
 
-O `system()` executa internamente `/bin/sh -c comando`, e essa shell é lançada com `execve()` recebendo o `environ` do processo chamador. Por isso, ao contrário do `execve()` da Task 3, as variáveis de ambiente são propagadas sem termos de fazer nada: a shell herda o ambiente do processo pai.
+O `/usr/bin/env` voltou a imprimir todas as variáveis de ambiente, desta vez sem termos indicado nada em lado nenhum. A razão está em como o `system()` funciona por dentro: em vez de executar o comando diretamente, corre `/bin/sh -c comando`, ou seja, lança uma shell e pede-lhe que execute o comando. Se olharmos para a implementação do `system()`, essa shell é arrancada com `execl()`, que por sua vez chama `execve()` passando-lhe o array de variáveis de ambiente (`environ`) do processo chamador.
+
+Por isso, ao contrário do `execve()` da Task 3, onde tínhamos de passar explicitamente o `environ`, aqui as variáveis de ambiente são propagadas sem fazermos nada: é o próprio `system()` que trata de as entregar à shell, e esta acaba por as passar ao `/usr/bin/env`.
 
 ### Task 5: Variáveis de ambiente em programas Set-UID
 
-Escrevemos um programa que imprime todas as variáveis de `environ`, tornámo-lo Set-UID root (`sudo chown root foo && sudo chmod 4755 foo`) e, antes de o correr, definimos três variáveis na shell: `PATH`, `LD_LIBRARY_PATH` e uma à nossa escolha.
+Um programa Set-UID corre com os privilégios do dono do ficheiro, e não com os de quem o executa: se o dono for o root, qualquer utilizador que o corra passa a ter, durante aquela execução, privilégios de root. Como o comportamento do programa pode ser influenciado pelas variáveis de ambiente, e estas são escolhidas pelo utilizador (potencialmente malicioso), interessa primeiro perceber que variáveis é que um programa Set-UID chega sequer a herdar do utilizador.
+
+Escrevemos um programa que imprime todas as variáveis de `environ`, tornámo-lo Set-UID root (`sudo chown root printerRoot && sudo chmod 4755 printerRoot`) e, antes de o correr a partir de uma conta de utilizador normal, definimos três variáveis na shell: o `PATH`, o `LD_LIBRARY_PATH` e uma à nossa escolha (`ANY_NAME = ""`).
 
 ![Task 5](../task5.png)
 
-Em geral as variáveis de ambiente do utilizador são herdadas pelo processo Set-UID, incluindo o `PATH` e a variável que definimos. Há exceções: o sistema remove algumas variáveis perigosas, como a `LD_LIBRARY_PATH`, para evitar que um utilizador normal consiga influenciar as bibliotecas carregadas por um programa que corre com privilégios elevados.
+Em geral as variáveis de ambiente do utilizador são de facto herdadas pelo processo Set-UID, incluindo o `PATH` e a variável que inventámos: aparecem na listagem tal como as definimos. A surpresa é que nem todas passam. O `LD_LIBRARY_PATH` que definimos não aparece no ambiente do processo Set-UID. O sistema remove propositadamente algumas variáveis perigosas da família `LD_*` quando o UID real é diferente do UID efetivo (que é o caso de um Set-UID corrido por outro utilizador), precisamente para impedir que um utilizador normal consiga influenciar as bibliotecas que vão ser carregadas por um programa a correr com privilégios elevados.
 
 ### Task 6: Exploração da variável `PATH` num programa Set-UID
 
@@ -90,7 +102,7 @@ sudo chown root vulnerable
 sudo chmod 4755 vulnerable
 ```
 
-Criámos um `ls` malicioso num diretório nosso:
+Criámos um `ls` num diretório nosso:
 
 ```bash
 nano /home/seed/bin/ls
@@ -185,7 +197,7 @@ O `catall.c` monta a string `"/bin/cat <argumento>"` e entrega-a ao `system()`. 
 
 Como o `vulnerable` é Set-UID root e o `/bin/sh` aponta para o `/bin/zsh` (que não larga os privilégios), a shell lançada pelo `system()` corre com UID efetivo 0. O `/bin/bash -p` usa o modo privilegiado (`-p`), que impede o bash de repor o `uid` ao sair do contexto Set-UID, pelo que a shell resultante fica mesmo como root. É dentro dessa shell que executámos o `rm`, que corre com privilégios de root e contorna as permissões que, de outra forma, impediriam o `seed` de apagar o ficheiro.
 
-O problema não está nos dados em si, mas no facto de o `system()` entregar a interpretação do comando a uma shell completa em vez de executar diretamente o binário pretendido. É isto que torna o `system()` perigoso num programa Set-UID sempre que o comando inclui dados do utilizador sem qualquer validação.
+A raiz do problema está em o `system()` entregar a interpretação do comando a uma shell completa, em vez de executar diretamente o binário pretendido. Os dados que passamos só fazem estrago porque há uma shell a interpretá-los, e é isto que torna o `system()` perigoso num programa Set-UID sempre que o comando inclui dados do utilizador sem qualquer validação.
 
 Se alterarmos o programa para chamar diretamente o binário com `execve()` em vez de `system()` (comentando a linha do `system()`), recompilarmos para `vulnerable` e repetirmos o ataque, a injeção deixa de resultar:
 
@@ -253,7 +265,7 @@ O texto que escrevemos a partir da shell não privilegiada aparece em `/etc/zzz`
 
 ### 3. Explicação técnica
 
-Capability leaking é quando um processo privilegiado obtém recursos (como file descriptors, sockets ou capacidades do kernel) enquanto ainda está com privilégios elevados e depois baixa o seu nível de privilégio, por exemplo com `setuid()`, sem largar esses recursos. O processo deixa de ser root no que toca ao UID, mas continua com acessos que só deviam existir enquanto era root.
+Capability leaking é quando um processo privilegiado obtém recursos enquanto ainda está com privilégios elevados e depois baixa o seu nível de privilégio (`setuid()`), sem largar esses recursos. O processo deixa de ser root no que toca ao UID, mas continua com acessos que só deviam existir enquanto era root.
 
 No `cap_leak.c` o mecanismo é este:
 
@@ -271,7 +283,7 @@ execve(v[0], v, 0);                          // (3) lança shell sem privilégio
 
 O recurso explorado é o file descriptor (`fd` 3) para o `/etc/zzz`, aberto com `O_RDWR | O_APPEND` enquanto o processo ainda tinha UID efetivo 0. É esse descritor, e não qualquer permissão do UID atual (`seed`), que deixa a escrita via `echo ... >&3` passar.
 
-A vulnerabilidade existe porque (a) o `open()` acontece antes da queda de privilégio, (b) o descritor nunca é fechado e (c) o `execve()` não o marca para fechar automaticamente. Bastava falhar uma destas condições (fechar o `fd` antes do `setuid`, marcá-lo com `FD_CLOEXEC`, ou abrir o ficheiro só depois do `setuid`) para o ataque deixar de funcionar.
+A vulnerabilidade existe porque: o `open()` acontece antes da queda de privilégio, o descritor nunca é fechado e o `execve()` não o marca para fechar automaticamente. Bastava falhar uma destas condições (fechar o `fd` antes do `setuid`, marcá-lo com `FD_CLOEXEC`, ou abrir o ficheiro só depois do `setuid`) para o ataque deixar de funcionar.
 
 ### 4. Medidas de mitigação
 
@@ -287,4 +299,4 @@ A vulnerabilidade existe porque (a) o `open()` acontece antes da queda de privil
 
 O `cat /etc/zzz` corrido fora do programa, já sem nenhum processo privilegiado em curso, mostra que o conteúdo escrito pelo `seed` (como confirma o `whoami` dentro da shell gerada pelo próprio exploit) ficou mesmo gravado no ficheiro que pertence a root. Isto comprova, de forma independente da sessão onde corremos o ataque, que um utilizador sem permissão de escrita em `/etc/zzz` conseguiu escrever lá através do `cap_leak`.
 
-Baixar o UID de um processo com `setuid()` não chega, por si só, para garantir que o processo deixou de ser privilegiado. Recursos obtidos antes da queda de privilégio, neste caso um file descriptor aberto para escrita, continuam acessíveis depois dela e tornam-se um vetor de escalada de privilégios indireta. Um programa Set-UID bem feito tem de tratar explicitamente o ciclo de vida de todos os recursos privilegiados que adquire, e não só do seu próprio UID.
+Baixar o UID de um processo com `setuid()` não chega, por si só, para garantir que o processo deixou de ser privilegiado. Recursos obtidos antes da queda de privilégio continuam acessíveis depois dela e tornam-se um vetor de escalada de privilégios indireta. Um programa Set-UID bem feito tem de tratar explicitamente o ciclo de vida de todos os recursos privilegiados que adquire, e não só do seu próprio UID.
