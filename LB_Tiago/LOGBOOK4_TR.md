@@ -21,6 +21,11 @@
 
 Usámos o `printenv` e o `env` para listar as variáveis de ambiente e os comandos internos da Bash `export` e `unset` para as definir e remover.
 
+<p align="center">
+  <img src="../q1_printenv.png" width="49%" style="vertical-align: middle;" />
+  <img src="../q1_export_unset.png" width="49%" style="vertical-align: middle;" />
+</p>
+
 ### Task 2: Propagação de variáveis entre processos (fork)
 
 Compilámos e corremos o `myprintenv.c`, que usa `fork()` para criar um processo filho. Numa primeira execução chamámos o `printenv()` só no filho e, numa segunda, só no pai. Guardámos os dois outputs em ficheiros e comparámo-los com `diff`.
